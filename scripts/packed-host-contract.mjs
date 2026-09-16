@@ -81,6 +81,7 @@ try {
     "package.json",
   )
   const installedManifest = JSON.parse(await readFile(installedManifestPath, "utf8"))
+  assert.equal(installedManifest.exports["./tui"].import, "./src/tui.js")
   const installedEntry = join(
     projectDirectory,
     "node_modules",

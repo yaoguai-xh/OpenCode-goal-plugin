@@ -120,16 +120,20 @@ OpenCode 2 build, not a mock:
 
 ### Configuration
 
-This plugin is **server-only**: `package.json` exports the root and
-`opencode-goal-plugin/server`, and there is no TUI plugin entrypoint. Its
-configuration therefore lives entirely in `opencode.json` (the `plugin` and
-`command` keys) on any OpenCode line.
+The server entrypoint remains available from the root and
+`opencode-goal-plugin/server`. OpenCode 1 also exports an optional
+`opencode-goal-plugin/tui` entrypoint for the live Goal sidebar. The server
+plugin and `command` configuration live in `opencode.json`; the sidebar entry
+is registered separately in OpenCode 1's `tui.json`.
 
 Plugins that *do* ship a TUI component are registered in a second file whose
 location differs between OpenCode lines, and those formats must not be mixed.
-That distinction does not apply here — including for the
-[status indicator](../README.md#status-indicator), which reaches the TUI through
-the session title rather than through a TUI plugin.
+The session-title [status indicator](../README.md#status-indicator) remains
+available without the TUI entrypoint. The sidebar follows completed Goal tool
+results from the current session and uses the server's project-local
+per-session state files for restart and migration fallback; custom
+`stateFilePath` or `OPENCODE_GOAL_STATE_PATH` values must be supplied to both
+plugin entries.
 
 ## Versioning
 
