@@ -1,9 +1,15 @@
-# opencode-goal-plugin
+# @yaoguai_xh/opencode-goal-plugin
 
-[![npm version](https://img.shields.io/npm/v/opencode-goal-plugin)](https://www.npmjs.com/package/opencode-goal-plugin)
-[![npm downloads](https://img.shields.io/npm/dm/opencode-goal-plugin)](https://www.npmjs.com/package/opencode-goal-plugin)
-[![CI](https://github.com/willytop8/OpenCode-goal-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/willytop8/OpenCode-goal-plugin/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/willytop8/OpenCode-goal-plugin/actions/workflows/codeql.yml/badge.svg)](https://github.com/willytop8/OpenCode-goal-plugin/actions/workflows/codeql.yml)
+> **Fork notice**: This package is a fork of [willytop8/OpenCode-goal-plugin](https://github.com/willytop8/OpenCode-goal-plugin) by [willytop8](https://github.com/willytop8), published under the MIT license. The original project and its author retain full copyright of the upstream code.
+>
+> **Changes in this fork**:
+> - Added an OpenCode 1 TUI sidebar entrypoint (`./tui` export) that renders the live goal status, elapsed time, auto-continue count, token usage, and objective.
+> - The sidebar reads the same project-local per-session state shards the server plugin writes (`<project>/.opencode/goals/state.json.sessions/…`), so it stays aligned with the session-title indicator without extra tool calls.
+> - Fixed the sidebar state-update issue inherited from the prevalentWare reference implementation: the sidebar now re-reads goal state reactively on `message.part.updated`, `message.updated`, `session.status`, and `session.idle` events instead of reading once at render time.
+> - `@opentui/solid` and `solid-js` are declared as peer dependencies so the TUI resolves them consistently with the OpenCode host.
+> - The server plugin (goal workflow, commands, tools, persistence, title indicator) is unchanged from upstream.
+
+[![npm version](https://img.shields.io/npm/v/@yaoguai_xh/opencode-goal-plugin)](https://www.npmjs.com/package/@yaoguai_xh/opencode-goal-plugin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A session-scoped `/goal` workflow for [OpenCode](https://opencode.ai/).

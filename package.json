@@ -1,6 +1,6 @@
 {
-  "name": "opencode-goal-plugin",
-  "version": "0.10.0",
+  "name": "@yaoguai_xh/opencode-goal-plugin",
+  "version": "0.10.1",
   "description": "Durable, guarded goal workflows for OpenCode.",
   "type": "module",
   "main": "./src/goal-plugin.js",
@@ -66,15 +66,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/willytop8/OpenCode-goal-plugin.git"
+    "url": "git+https://github.com/yaoguai-xh/OpenCode-goal-plugin.git"
   },
   "bugs": {
-    "url": "https://github.com/willytop8/OpenCode-goal-plugin/issues"
+    "url": "https://github.com/yaoguai-xh/OpenCode-goal-plugin/issues"
   },
-  "homepage": "https://github.com/willytop8/OpenCode-goal-plugin#readme",
+  "homepage": "https://github.com/yaoguai-xh/OpenCode-goal-plugin#readme",
   "author": {
     "name": "willytop8"
   },
+  "contributors": [
+    {
+      "name": "yaoguai-xh",
+      "url": "https://github.com/yaoguai-xh/OpenCode-goal-plugin"
+    }
+  ],
   "devDependencies": {
     "typescript": "7.0.2"
   },
@@ -84,13 +90,5 @@
   "peerDependencies": {
     "@opentui/solid": ">=0.5.8",
     "solid-js": ">=1.9.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentui/solid": {
-      "optional": true
-    },
-    "solid-js": {
-      "optional": true
-    }
   }
 }
