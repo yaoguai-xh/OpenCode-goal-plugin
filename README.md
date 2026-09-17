@@ -70,7 +70,7 @@ OpenCode installs npm plugins itself from your config, so there is nothing to `n
 
 ```json
 {
-  "plugin": ["opencode-goal-plugin@0.10.0"],
+  "plugin": ["@yaoguai_xh/opencode-goal-plugin@0.10.1"],
   "command": {
     "goal": {
       "description": "Set a session-scoped goal and auto-continue until complete.",
@@ -88,7 +88,7 @@ project-local `tui.json`):
 ```json
 {
   "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["opencode-goal-plugin@0.10.0"]
+  "plugin": ["@yaoguai_xh/opencode-goal-plugin@0.10.1"]
 }
 ```
 
@@ -101,16 +101,16 @@ tuple in `tui.json`.
 Or let the CLI add the plugin entry for you and then add the `command` block by hand:
 
 ```sh
-opencode plugin opencode-goal-plugin@0.10.0 --global
+opencode plugin @yaoguai_xh/opencode-goal-plugin@0.10.1 --global
 ```
 
-Restart OpenCode after editing the config. The options form `["opencode-goal-plugin@0.10.0", { ... }]` (see [Options](#options)) pins the same way.
+Restart OpenCode after editing the config. The options form `["@yaoguai_xh/opencode-goal-plugin@0.10.1", { ... }]` (see [Options](#options)) pins the same way.
 
 ### Upgrading
 
-**Pin the version.** OpenCode resolves an unpinned `"opencode-goal-plugin"` entry to `@latest` exactly once, installs it under its package cache (`~/.cache/opencode/packages/opencode-goal-plugin@latest/` by default; `opencode debug paths` prints the cache root), and never re-resolves `latest` while that directory exists. An unpinned entry therefore stays on whichever version was first installed, indefinitely, and new releases on npm are never picked up — a bug fixed months ago can still be running locally.
+**Pin the version.** OpenCode resolves an unpinned `"@yaoguai_xh/opencode-goal-plugin"` entry to `@latest` exactly once, installs it under its package cache (`~/.cache/opencode/packages/@yaoguai_xh/opencode-goal-plugin@latest/` by default; `opencode debug paths` prints the cache root), and never re-resolves `latest` while that directory exists. An unpinned entry therefore stays on whichever version was first installed, indefinitely, and new releases on npm are never picked up — a bug fixed months ago can still be running locally.
 
-To upgrade, bump the pin (for example to `opencode-goal-plugin@0.10.0`) and restart OpenCode; every pinned version gets its own cache directory. If you kept an unpinned entry, delete the `opencode-goal-plugin*` directories under the cache `packages/` folder and restart. `npx opencode-goal-plugin` runs the bundled verification script, which warns when the cached copy lags the package.
+To upgrade, bump the pin (for example to `@yaoguai_xh/opencode-goal-plugin@0.10.1`) and restart OpenCode; every pinned version gets its own cache directory. If you kept an unpinned entry, delete the `@yaoguai_xh/opencode-goal-plugin*` directories under the cache `packages/` folder and restart. `npx @yaoguai_xh/opencode-goal-plugin` runs the bundled verification script, which warns when the cached copy lags the package.
 
 ## Usage
 
@@ -352,7 +352,7 @@ Pass options when registering the plugin to change the defaults for all goals. T
 {
   "plugin": [
     [
-      "opencode-goal-plugin",
+      "@yaoguai_xh/opencode-goal-plugin",
       {
         "maxTurns": 10,
         "maxDurationMs": 900000,
@@ -401,7 +401,7 @@ Additional plugin-level options:
 
 ## Agent tools
 
-In addition to the `/goal` command, the plugin registers the same workflow as callable model tools by default, so the agent can inspect and manage the goal itself. A normal `opencode-goal-plugin` install includes the schema dependency needed for these definitions; no separate OpenCode helper package is required. Disable the tool surface explicitly with `registerTools: false`.
+In addition to the `/goal` command, the plugin registers the same workflow as callable model tools by default, so the agent can inspect and manage the goal itself. A normal `@yaoguai_xh/opencode-goal-plugin` install includes the schema dependency needed for these definitions; no separate OpenCode helper package is required. Disable the tool surface explicitly with `registerTools: false`.
 
 Registered tools:
 
@@ -467,7 +467,7 @@ Status icon, objective, auto-continues used / limit, elapsed time, and context t
 ```json
 {
   "plugin": [
-    ["opencode-goal-plugin", { "sessionTitleStatus": true }]
+    ["@yaoguai_xh/opencode-goal-plugin", { "sessionTitleStatus": true }]
   ]
 }
 ```
@@ -499,7 +499,7 @@ in the TUI plugin entry:
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
     [
-      "opencode-goal-plugin@0.10.0",
+      "@yaoguai_xh/opencode-goal-plugin@0.10.1",
       { "stateFilePath": "/absolute/path/to/state.json" }
     ]
   ]
@@ -534,7 +534,7 @@ Run `/goal resume` after switching back to an executing agent to start the work.
 ```json
 {
   "plugin": [
-    ["opencode-goal-plugin", { "restrictedAgents": ["plan", "review"] }]
+    ["@yaoguai_xh/opencode-goal-plugin", { "restrictedAgents": ["plan", "review"] }]
   ]
 }
 ```
