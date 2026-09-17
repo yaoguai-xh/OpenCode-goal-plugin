@@ -70,7 +70,7 @@ OpenCode installs npm plugins itself from your config, so there is nothing to `n
 
 ```json
 {
-  "plugin": ["@yaoguai_xh/opencode-goal-plugin@0.10.1"],
+  "plugin": ["@yaoguai_xh/opencode-goal-plugin@latest"],
   "command": {
     "goal": {
       "description": "Set a session-scoped goal and auto-continue until complete.",
@@ -88,7 +88,7 @@ project-local `tui.json`):
 ```json
 {
   "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["@yaoguai_xh/opencode-goal-plugin@0.10.1"]
+  "plugin": ["@yaoguai_xh/opencode-goal-plugin@latest"]
 }
 ```
 
@@ -101,16 +101,16 @@ tuple in `tui.json`.
 Or let the CLI add the plugin entry for you and then add the `command` block by hand:
 
 ```sh
-opencode plugin @yaoguai_xh/opencode-goal-plugin@0.10.1 --global
+opencode plugin @yaoguai_xh/opencode-goal-plugin@latest --global
 ```
 
-Restart OpenCode after editing the config. The options form `["@yaoguai_xh/opencode-goal-plugin@0.10.1", { ... }]` (see [Options](#options)) pins the same way.
+Restart OpenCode after editing the config. The options form `["@yaoguai_xh/opencode-goal-plugin@latest", { ... }]` (see [Options](#options)) pins the same way.
 
 ### Upgrading
 
 **Pin the version.** OpenCode resolves an unpinned `"@yaoguai_xh/opencode-goal-plugin"` entry to `@latest` exactly once, installs it under its package cache (`~/.cache/opencode/packages/@yaoguai_xh/opencode-goal-plugin@latest/` by default; `opencode debug paths` prints the cache root), and never re-resolves `latest` while that directory exists. An unpinned entry therefore stays on whichever version was first installed, indefinitely, and new releases on npm are never picked up — a bug fixed months ago can still be running locally.
 
-To upgrade, bump the pin (for example to `@yaoguai_xh/opencode-goal-plugin@0.10.1`) and restart OpenCode; every pinned version gets its own cache directory. If you kept an unpinned entry, delete the `@yaoguai_xh/opencode-goal-plugin*` directories under the cache `packages/` folder and restart. `npx @yaoguai_xh/opencode-goal-plugin` runs the bundled verification script, which warns when the cached copy lags the package.
+To upgrade, bump the pin (for example to `@yaoguai_xh/opencode-goal-plugin@latest`) and restart OpenCode; every pinned version gets its own cache directory. If you kept an unpinned entry, delete the `@yaoguai_xh/opencode-goal-plugin*` directories under the cache `packages/` folder and restart. `npx @yaoguai_xh/opencode-goal-plugin` runs the bundled verification script, which warns when the cached copy lags the package.
 
 ## Usage
 
@@ -499,7 +499,7 @@ in the TUI plugin entry:
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
     [
-      "@yaoguai_xh/opencode-goal-plugin@0.10.1",
+      "@yaoguai_xh/opencode-goal-plugin@latest",
       { "stateFilePath": "/absolute/path/to/state.json" }
     ]
   ]
