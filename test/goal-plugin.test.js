@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import test from "node:test"
 import pluginModule, { GoalPlugin, testInternals } from "../src/goal-plugin.js"
 import { acquirePersistenceLease } from "../src/persistence-lease.js"
@@ -6368,7 +6369,7 @@ test("persistence ownership failures reject initialization without corrupting st
 
 // ── State-path resolution (items 6.1 / 6.2) ────────────────────────────────
 
-test("resolveStateFilePath precedence: explicit option > env > project-local", () => {
+test("resolveStateFilePath precedence: explicit option > env > user-level project namespace", () => {
   assert.equal(
     resolveStateFilePath({
       stateFilePath: "/explicit/state.json",
@@ -6382,15 +6383,16 @@ test("resolveStateFilePath precedence: explicit option > env > project-local", (
     "/env/state.json",
   )
   assert.equal(
-    resolveStateFilePath({ env: {}, cwd: "/proj" }),
-    join("/proj", ".opencode", "goals", "state.json"),
+    resolveStateFilePath({ env: { HOME: "/home/test" }, cwd: "/proj" }),
+    join(resolve("/home/test"), ".local", "state", "opencode-goal-plugin", "projects",
+      createHash("sha256").update(resolve("/proj")).digest("hex"), "state.json"),
   )
 })
 
 test("xdgStateFilePath honors XDG_STATE_HOME and falls back to ~/.local/state", () => {
   assert.equal(
     xdgStateFilePath({ XDG_STATE_HOME: "/xdg" }),
-    join("/xdg", "opencode-goal-plugin", "state.json"),
+    join(resolve("/xdg"), "opencode-goal-plugin", "state.json"),
   )
   assert.equal(
     xdgStateFilePath({}),
@@ -6398,11 +6400,11 @@ test("xdgStateFilePath honors XDG_STATE_HOME and falls back to ~/.local/state", 
   )
 })
 
-test("normalizePersistenceOptions defaults to project-local with migration fallbacks", () => {
+test("normalizePersistenceOptions defaults to user-level with migration fallbacks", () => {
   const opts = normalizePersistenceOptions({}, { env: {}, cwd: "/proj" })
   assert.equal(opts.persistState, true)
-  assert.equal(opts.stateFilePath, join("/proj", ".opencode", "goals", "state.json"))
-  assert.deepEqual(opts.fallbackPaths, legacyStateFilePaths({}))
+  assert.equal(opts.stateFilePath, resolveStateFilePath({ env: {}, cwd: "/proj" }))
+  assert.deepEqual(opts.fallbackPaths, [join(resolve("/proj"), ".opencode", "goals", "state.json"), ...legacyStateFilePaths({})])
 })
 
 test("normalizePersistenceOptions: env override and explicit option disable fallbacks", () => {
@@ -6426,7 +6428,7 @@ test("normalizePersistenceOptions: env override and explicit option disable fall
   )
 })
 
-test("migrates state from a legacy XDG path to the project-local default", async () => {
+test("migrates state from a legacy XDG path to the user-level project namespace", async () => {
   const projDir = await mkdtemp(join(tmpdir(), "goal-plugin-proj-"))
   const secondProjDir = await mkdtemp(join(tmpdir(), "goal-plugin-proj-second-"))
   const xdgDir = await mkdtemp(join(tmpdir(), "goal-plugin-xdg-"))
@@ -6471,20 +6473,21 @@ test("migrates state from a legacy XDG path to the project-local default", async
 
     // The goal was recovered from the legacy XDG location...
     assert.notEqual(currentGoal("session-migrated"), null)
-    // ...and migrated forward to the project-local default path.
-    const projStatePath = sessionStatePath(join(projDir, ".opencode", "goals", "state.json"), "session-migrated")
+    // ...and migrated forward to this project's user-level namespace.
+    const projectRoot = resolveStateFilePath({ env, cwd: projDir })
+    const projStatePath = sessionStatePath(projectRoot, "session-migrated")
     const migrated = JSON.parse(await readFile(projStatePath, "utf8"))
     assert.equal(migrated.goals.length, 1)
     assert.equal(migrated.goals[0].sessionID, "session-migrated")
     assert.equal(
       JSON.parse(
-        await readFile(sessionStatePath(join(projDir, ".opencode", "goals", "state.json"), "session-migrated-two"), "utf8"),
+        await readFile(sessionStatePath(projectRoot, "session-migrated-two"), "utf8"),
       ).goals[0].condition,
       "second old goal",
     )
     assert.equal(
       JSON.parse(
-        await readFile(sessionStatePath(join(projDir, ".opencode", "goals", "state.json"), "session-migrated-result"), "utf8"),
+        await readFile(sessionStatePath(projectRoot, "session-migrated-result"), "utf8"),
       ).results[0].condition,
       "old result",
     )
@@ -6509,7 +6512,7 @@ test("migrates state from a legacy XDG path to the project-local default", async
   }
 })
 
-test("GoalPlugin resolves project-local state against the host-provided directory, not process.cwd()", async () => {
+test("GoalPlugin selects the host-provided project's state namespace, not process.cwd()", async () => {
   // OpenCode's PluginInput carries `directory` (the active session's project
   // directory) separately from the Node process's own process.cwd(), which
   // does not track per-session project directories when OpenCode runs as a
@@ -6517,6 +6520,9 @@ test("GoalPlugin resolves project-local state against the host-provided director
   // against wherever the server process happened to boot instead of the
   // project the user is working in.
   const sessionDir = await mkdtemp(join(tmpdir(), "goal-plugin-session-dir-"))
+  const stateDir = await mkdtemp(join(tmpdir(), "goal-plugin-session-state-"))
+  const env = { HOME: stateDir, XDG_STATE_HOME: stateDir }
+  let hooks
   try {
     assert.notEqual(sessionDir, process.cwd())
 
@@ -6526,21 +6532,23 @@ test("GoalPlugin resolves project-local state against the host-provided director
     }
     // No `cwd` plugin option — only the host-provided `directory` should
     // determine where state is written.
-    const hooks = await GoalPlugin({ client, directory: sessionDir }, { minDelayMs: 1 })
+    hooks = await GoalPlugin({ client, directory: sessionDir }, { minDelayMs: 1, env })
     const output = { parts: [] }
     await hooks["command.execute.before"](
       { command: "goal", sessionID: "session-dir-aware", arguments: "directory-aware persistence" },
       output,
     )
 
-    const expectedPath = sessionStatePath(join(sessionDir, ".opencode", "goals", "state.json"), "session-dir-aware")
+    const expectedPath = sessionStatePath(resolveStateFilePath({ env, cwd: sessionDir }), "session-dir-aware")
     const written = JSON.parse(await readFile(expectedPath, "utf8"))
     assert.equal(written.goals[0].condition, "directory-aware persistence")
 
-    // Nothing was written under process.cwd()'s .opencode directory.
-    await assert.rejects(stat(join(process.cwd(), ".opencode", "goals", "state.json")))
+    await assert.rejects(stat(join(sessionDir, ".opencode")), { code: "ENOENT" })
+    await assert.rejects(stat(sessionStatePath(resolveStateFilePath({ env, cwd: process.cwd() }), "session-dir-aware")), { code: "ENOENT" })
   } finally {
+    await hooks?.dispose()
     await rm(sessionDir, { recursive: true, force: true })
+    await rm(stateDir, { recursive: true, force: true })
   }
 })
 

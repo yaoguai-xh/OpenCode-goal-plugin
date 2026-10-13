@@ -255,9 +255,11 @@ export interface GoalPluginOptions {
    * Root filesystem path for persisted session-shard state when
    * `persistState` is enabled. Each session is written below
    * `<stateFilePath>.sessions/<sha256(sessionID)>/state.json`. Overrides both
-   * the project-local default and the `OPENCODE_GOAL_STATE_PATH` environment
-   * variable.
-   * @default "<cwd>/.opencode/goals/state.json"
+   * the user-level, project-isolated default and the
+   * `OPENCODE_GOAL_STATE_PATH` environment variable. Relative overrides resolve
+   * against the project directory and bypass automatic project isolation.
+   * Supply the same override to the TUI plugin when using its sidebar.
+   * @default "${XDG_STATE_HOME:-~/.local/state}/opencode-goal-plugin/projects/<sha256(projectDirectory)>/state.json"
    */
   stateFilePath?: string
 

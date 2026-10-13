@@ -369,6 +369,8 @@ test("disposing one workspace leaves another workspace active", async () => {
 
 test("disposed instance cannot persist over a replacement instance after a late prompt", async () => {
   const directory = await fs.mkdtemp(join(tmpdir(), "goal-plugin-late-dispose-"))
+  const env = { HOME: directory, XDG_STATE_HOME: join(directory, "state") }
+  const stateFilePath = testInternals.resolveStateFilePath({ env, cwd: directory })
   let releasePrompt
   let promptStarted
   const started = new Promise((resolve) => { promptStarted = resolve })
@@ -385,7 +387,7 @@ test("disposed instance cannot persist over a replacement instance after a late 
   try {
     first = await GoalPlugin(
       { client: firstClient, directory },
-      { registerTools: false, minDelayMs: 1, noToolCallTurnsBeforePause: 10 },
+      { registerTools: false, minDelayMs: 1, noToolCallTurnsBeforePause: 10, env },
     )
     await setGoal(first, "late-session", "old objective")
     const oldIdle = idle(first, "late-session")
@@ -395,7 +397,7 @@ test("disposed instance cannot persist over a replacement instance after a late 
 
     second = await GoalPlugin(
       { client: hostClient(), directory },
-      { registerTools: false, minDelayMs: 1, noToolCallTurnsBeforePause: 10 },
+      { registerTools: false, minDelayMs: 1, noToolCallTurnsBeforePause: 10, env },
     )
     await setGoal(second, "late-session", "replacement objective")
     releasePrompt()
@@ -403,7 +405,7 @@ test("disposed instance cannot persist over a replacement instance after a late 
 
     const raw = JSON.parse(
       await fs.readFile(
-        sessionPaths(join(directory, ".opencode", "goals", "state.json"), "late-session").stateFilePath,
+        sessionPaths(stateFilePath, "late-session").stateFilePath,
         "utf8",
       ),
     )
@@ -1315,30 +1317,33 @@ test("workspace persistence and lifecycle ledgers remain isolated", async () => 
   const root = await fs.mkdtemp(join(tmpdir(), "goal-plugin-workspaces-"))
   const firstDirectory = join(root, "one")
   const secondDirectory = join(root, "two")
+  const env = { HOME: root, XDG_STATE_HOME: join(root, "state") }
   await fs.mkdir(firstDirectory, { recursive: true })
   await fs.mkdir(secondDirectory, { recursive: true })
+  const firstStatePath = testInternals.resolveStateFilePath({ env, cwd: firstDirectory })
+  const secondStatePath = testInternals.resolveStateFilePath({ env, cwd: secondDirectory })
 
   const first = await GoalPlugin(
     { client: hostClient(), directory: firstDirectory },
-    { registerTools: false },
+    { registerTools: false, env },
   )
   await setGoal(first, "session-persist-one", "persist only workspace one")
 
   const second = await GoalPlugin(
     { client: hostClient(), directory: secondDirectory },
-    { registerTools: false },
+    { registerTools: false, env },
   )
   await setGoal(second, "session-persist-two", "persist only workspace two")
 
   const firstState = JSON.parse(
     await fs.readFile(
-      sessionPaths(join(firstDirectory, ".opencode", "goals", "state.json"), "session-persist-one").stateFilePath,
+      sessionPaths(firstStatePath, "session-persist-one").stateFilePath,
       "utf8",
     ),
   )
   const secondState = JSON.parse(
     await fs.readFile(
-      sessionPaths(join(secondDirectory, ".opencode", "goals", "state.json"), "session-persist-two").stateFilePath,
+      sessionPaths(secondStatePath, "session-persist-two").stateFilePath,
       "utf8",
     ),
   )
@@ -1346,15 +1351,18 @@ test("workspace persistence and lifecycle ledgers remain isolated", async () => 
   assert.deepEqual(secondState.goals.map((goal) => goal.sessionID), ["session-persist-two"])
 
   const firstLedger = await fs.readFile(
-    sessionPaths(join(firstDirectory, ".opencode", "goals", "state.json"), "session-persist-one").ledgerFilePath,
+    sessionPaths(firstStatePath, "session-persist-one").ledgerFilePath,
     "utf8",
   )
   const secondLedger = await fs.readFile(
-    sessionPaths(join(secondDirectory, ".opencode", "goals", "state.json"), "session-persist-two").ledgerFilePath,
+    sessionPaths(secondStatePath, "session-persist-two").ledgerFilePath,
     "utf8",
   )
   assert.match(firstLedger, /session-persist-one/)
   assert.doesNotMatch(firstLedger, /session-persist-two/)
   assert.match(secondLedger, /session-persist-two/)
   assert.doesNotMatch(secondLedger, /session-persist-one/)
+  await first.dispose()
+  await second.dispose()
+  await fs.rm(root, { recursive: true, force: true })
 })

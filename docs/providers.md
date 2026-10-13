@@ -101,7 +101,8 @@ specific provider/model:
    The final wording may be summarized or paraphrased because OpenCode custom
    commands still run through the selected model.
 6. Cross-check state mutations directly against the persisted state file
-   (`.opencode/goals/state.json`, project-local by default) to confirm the
+   (`${XDG_STATE_HOME:-~/.local/state}/opencode-goal-plugin/projects/<project-hash>/state.json.sessions/<session-hash>/state.json`
+   by default) to confirm the
    goal's `options` reflect the flags you passed and `state`/`stopReason`
    reflect what actually happened — this is authoritative even when the TUI
    display doesn't show the plugin's own output.

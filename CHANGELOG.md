@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.3 — 2026-10-13
+
+- Store default goal state and lifecycle ledgers under `${XDG_STATE_HOME:-~/.local/state}/opencode-goal-plugin/projects/<sha256(projectDirectory)>/`, with existing per-session shards. Normalize project directories and resolve symlink aliases so the server and TUI select the same namespace. New default storage creates no project `.opencode` directory, avoiding OpenCode's configuration-directory dependency installation.
+- Share state-path resolution with the TUI sidebar, including `stateFilePath` and `OPENCODE_GOAL_STATE_PATH` overrides, and isolate sidebar memory/KV caches by namespace. Migrate accessed project-local session shards and rotated ledgers under both source and destination leases, preserve originals, resume interrupted copies, and prefer existing destination data. Explicit overrides retain their existing behavior and disable automatic migration.
+
 ## 0.10.0 — 2026-09-06
 
 - Fix the plan-mode guard failing open on the first command of a session. OpenCode runs `command.execute.before` before any chat hook for the turn and its `Session` record carries no `agent` field, so the session-record fallback introduced in 0.9.0 could never learn the agent for a `/goal <objective>` sent as a fresh session's first turn: the goal started live and the routed text told the model to begin work. The routed turn itself carries the agent, so `chat.message` now re-evaluates the planning-only restriction for the goal that command created and, when the agent is restricted, holds the goal (`plan agent active`, budget preserved), rewrites the turn as a read-only control turn, and blocks tools for it. Reproduced, and verified fixed, against live OpenCode 1.18.25 and 1.18.29 over the HTTP `command` API with `agent: "plan"` and a `goal` command that does not pin an agent; the case where an earlier turn had already reported the agent was unaffected. Note that OpenCode runs a command under its configured `agent` when one is set (`cmd.agent ?? input.agent`), so with the README's `"agent": "build"` the `/goal` turn executes as `build` and a hold can only come from a previously reported planning-only agent; the README's plan-mode section now spells this out. Pinned by a new mutation-contract entry.

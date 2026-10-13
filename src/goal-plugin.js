@@ -12,7 +12,6 @@ import {
   rmSync,
   writeSync,
 } from "node:fs"
-import { homedir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path"
 import { z } from "zod"
 import { createOpenCodeSessionApi } from "./opencode-session-api.js"
@@ -20,25 +19,20 @@ import { applyNativeGoalConfig } from "./native-agent-config.js"
 import { serializeCompletionClaim } from "./completion-claim.js"
 import { goalToolFailure, goalToolSuccess, serializeGoalToolResult } from "./goal-tool-result.js"
 import {
+  legacyStateFilePaths,
+  projectDirectory,
+  projectLocalStateFilePath,
+  resolveStateFilePath,
+  sessionKey,
+  userStateDirectory,
+  xdgStateFilePath,
+} from "./state-paths.js"
+import {
   acquirePersistenceLease,
   isPersistenceLeaseContendedError,
 } from "./persistence-lease.js"
 
 const STATE_FILE_VERSION = 1
-// Default state now follows the project: <cwd>/.opencode/goals/state.json.
-// The legacy home-dir path and the XDG state path are read as migration
-// fallbacks so existing users do not lose state when upgrading.
-const PROJECT_LOCAL_STATE_SUBPATH = join(".opencode", "goals", "state.json")
-// Home base for path resolution. Honors an injected `env.HOME` when present so
-// path resolution is deterministic and testable across platforms — `os.homedir()`
-// ignores `$HOME` on macOS (it reads the account record), which would otherwise
-// make the legacy fallback resolve to the real home during isolated tests.
-function homeBase(env = process.env) {
-  return typeof env?.HOME === "string" && env.HOME.trim() ? env.HOME.trim() : homedir()
-}
-function legacyHomeStateFilePath(env = process.env) {
-  return join(homeBase(env), ".opencode-goal-plugin", "state.json")
-}
 const MAX_HISTORY_ENTRIES = 20
 const MAX_STALLED_COMPACTIONS = 2
 // Marks a plugin-synthesized parent wake so the receiving pass knows it is
@@ -1409,10 +1403,6 @@ function sessionDirectoryFor(stateFilePath) {
   return `${stateFilePath}.sessions`
 }
 
-function sessionKey(sessionID) {
-  return createHash("sha256").update(sessionID).digest("hex")
-}
-
 function sessionPathsFor(persistenceOptions, sessionID) {
   const directory = join(persistenceOptions.sessionDirectory, sessionKey(sessionID))
   const stateFilePath = join(directory, "state.json")
@@ -1422,50 +1412,16 @@ function sessionPathsFor(persistenceOptions, sessionID) {
   }
 }
 
-// XDG-style state path: $XDG_STATE_HOME/opencode-goal-plugin/state.json,
-// defaulting to ~/.local/state when XDG_STATE_HOME is unset.
-function xdgStateFilePath(env = process.env) {
-  const base =
-    typeof env?.XDG_STATE_HOME === "string" && env.XDG_STATE_HOME.trim()
-      ? env.XDG_STATE_HOME.trim()
-      : join(homeBase(env), ".local", "state")
-  return join(base, "opencode-goal-plugin", "state.json")
-}
-
-// State-file resolution precedence:
-//   1. explicit `stateFilePath` plugin option
-//   2. OPENCODE_GOAL_STATE_PATH environment variable
-//   3. project-local default: <cwd>/.opencode/goals/state.json
-function resolveStateFilePath({ stateFilePath, env = process.env, cwd } = {}) {
-  const base = typeof cwd === "string" && cwd.trim() ? cwd : process.cwd()
-  if (typeof stateFilePath === "string" && stateFilePath.trim()) {
-    const configured = stateFilePath.trim()
-    return isAbsolute(configured) ? configured : resolvePath(base, configured)
-  }
-  const envPath = env?.OPENCODE_GOAL_STATE_PATH
-  if (typeof envPath === "string" && envPath.trim()) {
-    const configured = envPath.trim()
-    return isAbsolute(configured) ? configured : resolvePath(base, configured)
-  }
-  return join(base, PROJECT_LOCAL_STATE_SUBPATH)
-}
-
-// Read-only migration fallbacks, tried in order when the resolved default path
-// has no file yet. Only used for the project-local default — an explicit option
-// or env override is taken literally with no fallback.
-function legacyStateFilePaths(env = process.env) {
-  return [legacyHomeStateFilePath(env), xdgStateFilePath(env)]
-}
-
 function normalizePersistenceOptions(options = {}, { env = process.env, cwd } = {}) {
   const persistState = options.persistState !== false
   const hasExplicitLocation =
     (typeof options.stateFilePath === "string" && options.stateFilePath.trim()) ||
     (typeof env?.OPENCODE_GOAL_STATE_PATH === "string" && env.OPENCODE_GOAL_STATE_PATH.trim())
   const stateFilePath = resolveStateFilePath({ stateFilePath: options.stateFilePath, env, cwd })
+  const legacyProjectStateFilePath = hasExplicitLocation ? null : projectLocalStateFilePath(cwd)
   const fallbackPaths = hasExplicitLocation
     ? []
-    : legacyStateFilePaths(env).filter((path) => path !== stateFilePath)
+    : [legacyProjectStateFilePath, ...legacyStateFilePaths(env)].filter((path) => path !== stateFilePath)
   const ledgerFilePath =
     typeof options.ledgerFilePath === "string" && options.ledgerFilePath.trim()
       ? options.ledgerFilePath.trim()
@@ -1481,21 +1437,23 @@ function normalizePersistenceOptions(options = {}, { env = process.env, cwd } = 
     sessionDirectory,
     migrationMarkerPath: join(sessionDirectory, ".migration-v1-complete"),
     fallbackPaths,
+    legacyProjectStateFilePath,
+    legacyProjectDirectory: projectDirectory(cwd),
     ledgerFilePath,
     ledgerMaxBytes,
     ledgerRetentionFiles,
-    projectRoot: cwd,
-    enforceProjectBoundary: !hasExplicitLocation,
+    persistenceRoot: dirname(userStateDirectory(env)),
+    enforceBoundary: !hasExplicitLocation,
   }
 }
 
-async function assertSafeProjectPersistencePath({ stateFilePath, projectRoot, enforceProjectBoundary }) {
-  if (!enforceProjectBoundary || typeof projectRoot !== "string" || !projectRoot.trim()) return
-  const root = resolvePath(projectRoot)
+async function assertSafePersistencePath({ stateFilePath, persistenceRoot, enforceBoundary }) {
+  if (!enforceBoundary || typeof persistenceRoot !== "string" || !persistenceRoot.trim()) return
+  const root = resolvePath(persistenceRoot)
   const target = resolvePath(stateFilePath)
   const rel = relative(root, target)
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    throw new Error("default goal persistence path escapes the project directory")
+    throw new Error("default goal persistence path escapes the state directory")
   }
   let current = root
   for (const segment of dirname(rel).split(sep).filter(Boolean)) {
@@ -2002,6 +1960,7 @@ function migrationCandidates(persistenceOptions) {
     ...(persistenceOptions.fallbackPaths || []).map((stateFilePath) => ({
       stateFilePath,
       ledgerFilePath: ledgerPathFor(stateFilePath),
+      preserveSource: stateFilePath === persistenceOptions.legacyProjectStateFilePath,
     })),
   ]
 }
@@ -2078,6 +2037,12 @@ async function migrateLegacyState(persistenceOptions, client) {
     const sourceHasLedger = await pathExists(candidate.ledgerFilePath)
     if (!sourceHasState && !sourceHasLedger) continue
 
+    if (candidate.preserveSource) await assertSafePersistencePath({
+      stateFilePath: candidate.stateFilePath,
+      persistenceRoot: persistenceOptions.legacyProjectDirectory,
+      enforceBoundary: true,
+    })
+
     const migrationLease = await acquireMigrationLease(
       candidate.stateFilePath,
       persistenceOptions.migrationMarkerPath,
@@ -2122,7 +2087,7 @@ async function migrateLegacyState(persistenceOptions, client) {
       }
 
       await writeMigrationMarker(persistenceOptions.migrationMarkerPath)
-      for (const sourcePath of [candidate.stateFilePath, candidate.ledgerFilePath]) {
+      for (const sourcePath of candidate.preserveSource ? [] : [candidate.stateFilePath, candidate.ledgerFilePath]) {
         if (!(await pathExists(sourcePath))) continue
         const backupPath = `${sourcePath}.migrated.${Date.now()}.${randomUUID()}`
         try {
@@ -2153,6 +2118,72 @@ async function migrateLegacyState(persistenceOptions, client) {
     await writeMigrationMarker(persistenceOptions.migrationMarkerPath)
   } finally {
     await freshMigrationLease.release()
+  }
+}
+
+// The destination session lease is already held. Own the old shard as well so
+// an older process cannot write during migration. Keep originals for cleanup.
+async function migrateProjectSession(persistenceOptions, targetPaths, client, sessionID) {
+  const legacyRoot = persistenceOptions.legacyProjectStateFilePath
+  if (!legacyRoot) return
+  const marker = join(dirname(targetPaths.stateFilePath), ".project-local-migration-v1-complete")
+  const pending = `${marker}.pending`
+  if (await pathExists(marker)) return
+  const ledgerSuffixes = ["", ...Array.from({ length: 10 }, (_, i) => `.${i + 1}`)]
+  const hasTarget = await pathExists(targetPaths.stateFilePath) ||
+    (await Promise.all(ledgerSuffixes.map((suffix) => pathExists(`${targetPaths.ledgerFilePath}${suffix}`)))).some(Boolean)
+  if (hasTarget && !(await pathExists(pending))) {
+    await writeMigrationMarker(marker)
+    return
+  }
+  const source = sessionPathsFor({ sessionDirectory: sessionDirectoryFor(legacyRoot) }, sessionID)
+  await assertSafePersistencePath({
+    stateFilePath: source.stateFilePath,
+    persistenceRoot: persistenceOptions.legacyProjectDirectory,
+    enforceBoundary: true,
+  })
+  const sourceHasState = await pathExists(source.stateFilePath)
+  const hasSourceLedger = (await Promise.all(ledgerSuffixes.map((suffix) => pathExists(`${source.ledgerFilePath}${suffix}`)))).some(Boolean)
+  if (!sourceHasState && !hasSourceLedger) {
+    await writeMigrationMarker(marker)
+    return
+  }
+
+  const sourceLease = await acquirePersistenceLease(source.stateFilePath)
+  try {
+    if (currentRuntime().disposed) return
+    const state = await readPersistedStateFile(source.stateFilePath, client)
+    if (state.status === "invalid") {
+      const entries = await readLedgerEntries(source.ledgerFilePath, {
+        maxBytes: persistenceOptions.ledgerMaxBytes,
+        retentionFiles: persistenceOptions.ledgerRetentionFiles,
+      })
+      if (!entries.length) throw new Error(`Cannot migrate invalid goal state at ${source.stateFilePath}`)
+    }
+    await writeMigrationMarker(pending)
+    for (const suffix of ledgerSuffixes) {
+      const sourcePath = `${source.ledgerFilePath}${suffix}`
+      const targetPath = `${targetPaths.ledgerFilePath}${suffix}`
+      if (!(await pathExists(sourcePath))) continue
+      if (await pathExists(targetPath)) continue
+      const info = await fs.lstat(sourcePath)
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Cannot migrate non-regular goal ledger at ${sourcePath}`)
+      const tmpPath = `${targetPath}.${randomUUID()}.tmp`
+      try {
+        await fs.copyFile(sourcePath, tmpPath, fsConstants.COPYFILE_EXCL)
+        await fs.chmod(tmpPath, 0o600)
+        await fs.link(tmpPath, targetPath)
+      } finally {
+        await fs.rm(tmpPath, { force: true })
+      }
+    }
+    if (state.status === "loaded" && !(await pathExists(targetPaths.stateFilePath))) {
+      await writeStateSnapshot(targetPaths.stateFilePath, JSON.parse(state.raw))
+    }
+    await writeMigrationMarker(marker)
+    await fs.rm(pending, { force: true })
+  } finally {
+    await sourceLease.release()
   }
 }
 
@@ -4210,8 +4241,8 @@ async function createGoalPlugin({ client, directory } = {}, pluginOptions = {}) 
   // separately from the Node process's own process.cwd(), which — when
   // OpenCode runs as a persistent server/daemon serving multiple
   // projects/sessions — does NOT track the session's directory. Falling back
-  // to process.cwd() here would silently resolve the project-local state
-  // path against wherever the server happened to boot, not the project the
+  // to process.cwd() here would select the state namespace of wherever the
+  // server happened to boot, not the project the
   // user is actually working in. An explicit `cwd` plugin option (mainly for
   // tests) still takes precedence.
   const persistenceOptions = normalizePersistenceOptions(pluginOptions, {
@@ -4448,7 +4479,7 @@ async function createGoalPlugin({ client, directory } = {}, pluginOptions = {}) 
 
     const load = (async () => {
       const paths = sessionPathsFor(persistenceOptions, sessionID)
-      await assertSafeProjectPersistencePath({
+      await assertSafePersistencePath({
         ...persistenceOptions,
         stateFilePath: paths.stateFilePath,
       })
@@ -4474,6 +4505,8 @@ async function createGoalPlugin({ client, directory } = {}, pluginOptions = {}) 
       runtime.passiveSessions.delete(sessionID)
       runtime.sessionPersistence.set(sessionID, persistence)
       try {
+        await migrateProjectSession(persistenceOptions, paths, client, sessionID)
+        if (runtime.disposed) return releaseDisposedSession()
         await migrateLegacyState(persistenceOptions, client)
         if (runtime.disposed) return releaseDisposedSession()
         const status = await loadPersistedSessionState(persistence, client, sessionID)
@@ -4518,6 +4551,7 @@ async function createGoalPlugin({ client, directory } = {}, pluginOptions = {}) 
       } catch (error) {
         runtime.sessionPersistence.delete(sessionID)
         await lease.release().catch(() => false)
+        if (isPersistenceLeaseContendedError(error)) return enterPassiveSession(sessionID, error)
         throw error
       }
     })()

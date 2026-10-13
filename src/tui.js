@@ -1,8 +1,10 @@
-let readFileSyncFn, computeHashFn
+let readFileSyncFn, resolveStatePathFn, sessionStatePathFn
 
 try {
   readFileSyncFn = (await import("node:fs")).readFileSync
-  computeHashFn = (await import("node:crypto")).createHash
+  const paths = await import("./state-paths.js")
+  resolveStatePathFn = paths.resolveStateFilePath
+  sessionStatePathFn = paths.sessionStateFilePath
 } catch {
   // node builtins unavailable in this runtime (OpenCode binary)
 }
@@ -50,14 +52,14 @@ function lineValue(text, label) {
 
 // ---- state file reader (reads server's persisted goal directly) ----
 
-function projectDir(api) {
-  return api.state.path.directory || process.cwd()
-}
-
-function sessionShardPath(dir, sessionID) {
-  if (!computeHashFn) return undefined
-  const key = computeHashFn("sha256").update(sessionID).digest("hex")
-  return `${dir}/.opencode/goals/state.json.sessions/${key}/state.json`
+function sessionShardPath(api, sessionID, options) {
+  if (!resolveStatePathFn || !sessionStatePathFn || options.persistState === false) return undefined
+  const root = resolveStatePathFn({
+    stateFilePath: options.stateFilePath,
+    env: options.env,
+    cwd: options.cwd || api.state.path?.directory,
+  })
+  return sessionStatePathFn(root, sessionID)
 }
 
 function convertServerGoal(raw, now) {
@@ -93,11 +95,8 @@ function convertServerGoal(raw, now) {
   }
 }
 
-function readStateGoal(api, sessionID) {
-  if (!readFileSyncFn) return undefined
-  const dir = projectDir(api)
-  const shard = sessionShardPath(dir, sessionID)
-  if (!shard) return undefined
+function readStateGoal(shard, sessionID) {
+  if (!readFileSyncFn || !shard) return undefined
   try {
     const parsed = JSON.parse(readFileSyncFn(shard, "utf8"))
     if (parsed?.version !== 1 || !Array.isArray(parsed.goals)) return undefined
@@ -225,12 +224,19 @@ function parseGoalToolOutput(part, sessionID, now = Date.now()) {
 
 // ---- unified state reader (state file → messages → KV cache) ----
 
-function goalStateFromSession(api, sessionID) {
+function goalStateFromSession(api, sessionID, options) {
+  const shard = sessionShardPath(api, sessionID, options)
+  const namespace = shard || JSON.stringify([
+    options.cwd || api.state.path?.directory || "",
+    options.stateFilePath || options.env?.OPENCODE_GOAL_STATE_PATH || "",
+    sessionID,
+  ])
+  const cacheKey = `goal.tui.${namespace}`
   // 1. Try state file (primary source — matches server's live data)
-  const fromFile = readStateGoal(api, sessionID)
+  const fromFile = readStateGoal(shard, sessionID)
   if (fromFile !== undefined) {
-    goalCache.set(sessionID, fromFile)
-    api.kv?.set(`goal.tui.${sessionID}`, fromFile)
+    goalCache.set(cacheKey, fromFile)
+    api.kv?.set(cacheKey, fromFile)
     return fromFile
   }
 
@@ -243,18 +249,18 @@ function goalStateFromSession(api, sessionID) {
     for (const part of parts) {
       const result = parseGoalToolOutput(part, sessionID)
       if (result !== undefined) {
-        goalCache.set(sessionID, result)
-        api.kv?.set(`goal.tui.${sessionID}`, result)
+        goalCache.set(cacheKey, result)
+        api.kv?.set(cacheKey, result)
         return result
       }
     }
   }
 
   // 3. Fall back to memory/KV cache
-  const mem = goalCache.get(sessionID)
+  const mem = goalCache.get(cacheKey)
   if (mem !== undefined) return mem
-  const persisted = api.kv?.get(`goal.tui.${sessionID}`, null)
-  if (persisted !== null && persisted !== undefined) { goalCache.set(sessionID, persisted); return persisted }
+  const persisted = api.kv?.get(cacheKey, null)
+  if (persisted !== null && persisted !== undefined) { goalCache.set(cacheKey, persisted); return persisted }
   return undefined
 }
 
@@ -274,14 +280,14 @@ function statusLabel(s) {
 
 // ---- reactive sidebar component ----
 
-function createGoalSidebar(api, sessionID, revision, revMap) {
-  const [goal, setGoal] = createSignal(goalStateFromSession(api, sessionID))
+function createGoalSidebar(api, sessionID, revision, revMap, options) {
+  const [goal, setGoal] = createSignal(goalStateFromSession(api, sessionID, options))
   const [nowSeconds, setNowSeconds] = createSignal(Date.now())
 
   createEffect(() => {
     revision()
     void revMap.get(sessionID)
-    const next = goalStateFromSession(api, sessionID)
+    const next = goalStateFromSession(api, sessionID, options)
     if (next !== undefined) setGoal(next)
     setNowSeconds(Date.now())
   })
@@ -316,7 +322,7 @@ function createGoalSidebar(api, sessionID, revision, revMap) {
 
 // ---- plugin entry ----
 
-const tui = async (api) => {
+const tui = async (api, options = {}) => {
   const [revision, setRevision] = createSignal(0)
   const revMap = new Map()
 
@@ -338,7 +344,7 @@ const tui = async (api) => {
     order: 125,
     slots: {
       sidebar_content(_ctx, props) {
-        return createGoalSidebar(api, props.session_id, revision, revMap)
+        return createGoalSidebar(api, props.session_id, revision, revMap, options)
       },
     },
   })
@@ -351,7 +357,7 @@ const tui = async (api) => {
     onSelect: () => {
       const route = api.route.current
       if (route.name !== "session" || !route.params?.sessionID) return
-      const g = goalStateFromSession(api, route.params.sessionID)
+      const g = goalStateFromSession(api, route.params.sessionID, options)
       api.ui.toast({
         title: "Goal",
         message: g ? `${statusLabel(g.status)} | ${g.objective}` : "No goal",

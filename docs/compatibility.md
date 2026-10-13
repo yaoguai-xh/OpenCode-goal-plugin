@@ -129,11 +129,13 @@ is registered separately in OpenCode 1's `tui.json`.
 Plugins that *do* ship a TUI component are registered in a second file whose
 location differs between OpenCode lines, and those formats must not be mixed.
 The session-title [status indicator](../README.md#status-indicator) remains
-available without the TUI entrypoint. The sidebar follows completed Goal tool
-results from the current session and uses the server's project-local
-per-session state files for restart and migration fallback; custom
-`stateFilePath` or `OPENCODE_GOAL_STATE_PATH` values must be supplied to both
-plugin entries.
+available without the TUI entrypoint. The sidebar reads the server's user-level,
+project-isolated session state first, with completed Goal tool results and cached
+snapshots as fallbacks. Both entrypoints share path resolution. A custom
+`stateFilePath` must be supplied to both plugin entries; an
+`OPENCODE_GOAL_STATE_PATH` override must be available in both processes'
+environments. The server migrates old project-local shards when each session is
+accessed, preserving the originals.
 
 ## Versioning
 

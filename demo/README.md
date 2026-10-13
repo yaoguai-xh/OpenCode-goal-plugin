@@ -73,7 +73,9 @@ agent verifies the suite passes and reports evidence-backed completion.
   the [compatibility table](../README.md#compatibility-snapshot)). Either
   way, the goal's state (limits, turn count, completion) is tracked
   correctly; you can always verify it directly by inspecting the
-  persisted state at `.opencode/goals/state.json` in this directory.
+   persisted session shard under
+   `${XDG_STATE_HOME:-~/.local/state}/opencode-goal-plugin/projects/<project-hash>/state.json.sessions/<session-hash>/`.
+   See the main README's persistence section for project identity and migration.
 
 ## Resetting the demo
 
@@ -82,5 +84,8 @@ To run the demo again from a clean slate:
 ```sh
 git checkout -- src/math.js
 /goal clear
-rm -rf .opencode/goals
 ```
+
+`/goal clear` resets the current session's goal through the plugin. Goal state
+now lives in the user-level project namespace, so deleting `.opencode/goals`
+does not reset it.
